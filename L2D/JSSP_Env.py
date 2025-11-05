@@ -7,6 +7,8 @@ from updateEntTimeLB import calEndTimeLB
 from Params import configs
 from permissibleLS import permissibleLeftShift
 from updateAdjMat import getActionNbghs
+
+# Added: new import for dispatching rule logic
 from dispatching_rules import Rules, apply_dispatching_rule
 
 class SJSSP(gym.Env, EzPickle):
