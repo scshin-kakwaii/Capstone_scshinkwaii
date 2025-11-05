@@ -1,5 +1,10 @@
 # agent_utils.py (Corrected for Rule Selection)
-
+#Note to professor:
+# - We no longer pick a concrete operation from `candidate`.
+# - The policy p is over a FIXED set of dispatching RULES (e.g., 8 rules).
+# - We return the RULE INDEX (int) as the "action".
+# - The environment (or your outer loop) applies that rule to choose
+#   the actual operation among eligible ones.
 import torch
 from torch.distributions.categorical import Categorical
 
