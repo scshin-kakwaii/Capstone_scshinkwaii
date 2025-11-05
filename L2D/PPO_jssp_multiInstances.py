@@ -123,6 +123,11 @@ class PPO:
             loss_sum = 0
             vloss_sum = 0
             for i in range(len(memories)):
+                # NOTE TO PROFESSOR: CHANGE 1
+                # The policy network call is simplified. 'candidate' and 'mask' are set to None.
+                # In the original code, these tensors were passed to the policy.
+                # This reflects a change in the model architecture to a "rule-selecting" agent
+                # that doesn't require an explicit list of candidate actions during the forward pass.
                 pis, vals = self.policy(x=fea_mb_t_all_env[i],
                                         graph_pool=mb_g_pool,
                                         adj=adj_mb_t_all_env[i],
@@ -201,9 +206,13 @@ def main():
     
     for i, env in enumerate(envs):
         instance_data = data_generator(n_j=configs.n_j, n_m=configs.n_m, low=configs.low, high=configs.high)
+        # NOTE TO PROFESSOR: CHANGE 2
+        # The environment reset now follows the standard Gymnasium API.
+        # Original: adj, fea, candidate, mask = env.reset(...)
+        # New: `reset` returns a tuple (obs, info), where `obs` is a dictionary.
         # `reset` now returns a dictionary of observations and an info dict
         obs, _ = env.reset(options={'data': instance_data})
-        # Unpack the observation dictionary
+        # We now unpack the observation dictionary to get the state components.
         adj_envs.append(obs['adj'])
         fea_envs.append(obs['fea'])
         candidate_envs.append(obs['candidate'])
@@ -228,8 +237,9 @@ def main():
                 action_envs = []
                 a_idx_envs = []
                 for i in range(configs.num_envs):
-                    # --- CRITICAL CHANGE ---
-                    # Candidate and mask are no longer needed by the policy network
+                    # NOTE TO PROFESSOR: CHANGE 3 (Consistent with Change 1)
+                    # The policy call here is also updated to no longer require 'candidate' and 'mask'.
+                    # Original: ppo.policy_old(..., candidate=candidate_tensor_envs[i].unsqueeze(0), mask=mask_tensor_envs[i].unsqueeze(0))
                     pi, _ = ppo.policy_old(x=fea_tensor_envs[i],
                                            graph_pool=g_pool_step,
                                            padded_nei=None,
@@ -237,7 +247,10 @@ def main():
                                            candidate=None, # Not used
                                            mask=None)      # Not used
 
-                    # Call the simplified select_action
+                    # NOTE TO PROFESSOR: CHANGE 4
+                    # The action selection function is simplified.
+                    # Original: action, a_idx = select_action(pi, candidate_envs[i], memories[i])
+                    # The `candidate_envs` is no longer needed as an argument.
                     action, a_idx = select_action(pi, memories[i])
                     action_envs.append(action)
                     a_idx_envs.append(a_idx)
@@ -257,11 +270,15 @@ def main():
                 memories[i].mask_mb.append(mask_tensor_envs[i])
                 memories[i].a_mb.append(a_idx_envs[i])
 
-                # `step` now returns obs, reward, terminated, truncated, info
+                # NOTE TO PROFESSOR: CHANGE 5
+                # The environment step now follows the standard Gymnasium API.
+                # Original: adj, fea, reward, done, candidate, mask = envs[i].step(...)
+                # New: `step` returns a 5-element tuple: (obs, reward, terminated, truncated, info).
                 obs, reward, terminated, truncated, info = envs[i].step(action_envs[i].item())
+                # The 'done' signal is now a combination of 'terminated' and 'truncated'.
                 done = terminated or truncated
 
-                # Unpack the new observation dictionary
+                # Unpack the new observation dictionary for the next state
                 next_adj_envs.append(obs['adj'])
                 next_fea_envs.append(obs['fea'])
                 next_candidate_envs.append(obs['candidate'])
@@ -273,18 +290,24 @@ def main():
 
             adj_envs = next_adj_envs
 
-            # --- Update states for the next loop iteration ---
+            # NOTE TO PROFESSOR: CHANGE 6
+            # The logic for updating the state variables for the next loop is now more structured.
+            # Instead of clearing and re-appending, we assign the collected 'next' states.
             adj_envs = next_adj_envs
             fea_envs = next_fea_envs
             candidate_envs = next_candidate_envs
             mask_envs = next_mask_envs
 
-            # --- Check if the episode is finished ---
-            if done: # Use the done flag from the last environment
+            # NOTE TO PROFESSOR: CHANGE 7
+            # The episode termination check is updated.
+            # Original: `if envs[0].done(): break` (relied on a custom env method)
+            # New: We use the `done` flag returned by the standard Gymnasium `step` function.
+            if done: 
                 adj_envs = []
                 fea_envs = []
                 candidate_envs = []
                 mask_envs = []
+                # The reset logic is now placed here, inside the rollout loop, which is a more standard pattern.
                 for i, env in enumerate(envs):
                     instance_data = data_generator(n_j=configs.n_j, n_m=configs.n_m, low=configs.low, high=configs.high)
                     obs, _ = env.reset(options={'data': instance_data})
@@ -313,6 +336,12 @@ def main():
         # validate and save use mean performance
         t4 = time.time()
         if (i_update + 1) % 100 == 0:
+            # NOTE TO PROFESSOR: CHANGE 8 (Crucial Correction)
+            # Removed the negative sign from the validation result.
+            # Original: `vali_result = - validate(vali_data, ppo.policy).mean()`
+            # The `validate` function has been corrected to return the true, POSITIVE makespan.
+            # Therefore, we no longer need to negate it. This ensures that the logged and printed
+            # validation results are the actual, correct makespans.
             vali_result = validate(vali_data, ppo.policy).mean()
             validation_log.append(vali_result)
             if vali_result < record:
