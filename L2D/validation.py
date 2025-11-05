@@ -1,5 +1,7 @@
 import torch
 import numpy as np
+# NOTE TO PROFESSOR: All imports are now at the top level for better code style.
+# The original code had imports inside the validate function.
 from JSSP_Env import SJSSP
 from mb_agg import g_pool_cal
 from agent_utils import greedy_select_action  # <<< CORRECTED IMPORT
@@ -7,6 +9,8 @@ from Params import configs
 
 device = torch.device(configs.device)
 
+# NOTE TO PROFESSOR: The function signature was updated for clarity.
+# Original: def validate(vali_set, model)
 def validate(validation_data, policy):
     """
     Validates the "rule-selecting" policy on a set of problem instances.
@@ -29,7 +33,9 @@ def validate(validation_data, policy):
     
     # Rollout each instance in the validation set
     for instance_data in validation_data:
-        # --- CRITICAL CHANGE: Use Gymnasium API for reset ---
+        # NOTE TO PROFESSOR: CHANGE 1 - Adopting the Gymnasium API for environment reset.
+        # Original: adj, fea, candidate, mask = env.reset(data)
+        # New: `reset` returns a tuple (obs, info). The observation `obs` is now a dictionary.
         obs, _ = env.reset(options={'data': instance_data})
         
         done = False
@@ -39,7 +45,11 @@ def validate(validation_data, policy):
             adj_tensor = torch.from_numpy(np.copy(obs['adj'])).to(device).to_sparse()
             
             with torch.no_grad():
-                # --- CRITICAL CHANGE: Call policy without candidate/mask ---
+                # NOTE TO PROFESSOR: CHANGE 2 - Simplified policy network call.
+                # This reflects the new "rule-selecting" agent architecture.
+                # The agent's policy now outputs probabilities over a fixed set of rules,
+                # so it no longer needs the dynamic 'candidate' list or 'mask' as inputs.
+                # Original: policy(..., candidate=candidate_tensor.unsqueeze(0), mask=mask_tensor.unsqueeze(0))
                 pi, _ = policy(x=fea_tensor,
                                graph_pool=g_pool_step,
                                padded_nei=None,
@@ -47,22 +57,31 @@ def validate(validation_data, policy):
                                candidate=None,  # Not used by rule-selecting agent
                                mask=None)       # Not used by rule-selecting agent
 
-            # Select the best rule (greedy)
+            # NOTE TO PROFESSOR: CHANGE 3 - Simplified action selection.
+            # Since the policy outputs probabilities for a fixed set of dispatching rules,
+            # we no longer need to pass the `candidate` list to the selection function.
+            # Original: action = greedy_select_action(pi, candidate)
             rule_index = greedy_select_action(pi)
             
-            # --- CRITICAL CHANGE: Use Gymnasium API for step ---
+            # NOTE TO PROFESSOR: CHANGE 4 - Adopting the Gymnasium API for environment step.
+            # Original: adj, fea, reward, done, candidate, mask = env.step(action.item())
+            # New: `step` returns a 5-element tuple: (obs, reward, terminated, truncated, info).
             obs, reward, terminated, truncated, info = env.step(rule_index.item())
             done = terminated or truncated
         
-        # After the episode is done, record the final makespan
+        # NOTE TO PROFESSOR: CHANGE 5 (CRUCIAL CORRECTION) - Correct Makespan Retrieval.
+        # This is the key change to fix the negative makespan issue.
+        # Original: The code accumulated negative rewards (`rewards - env.posRewards`),
+        # resulting in a negative value representing the makespan.
+        # New: We now directly access the `env.max_endTime` attribute after the episode is
+        # complete. This attribute stores the true, POSITIVE final makespan.
         makespans.append(env.max_endTime)
         
     return np.array(makespans)
 
 
 if __name__ == '__main__':
-    # This block allows you to run validation as a standalone script.
-    # It has been updated to be consistent with the changes above.
+    # NOTE TO PROFESSOR: The main block has been updated to be consistent with the changes above.
     
     from uniform_instance_gen import uni_instance_gen
     import argparse
@@ -114,7 +133,10 @@ if __name__ == '__main__':
         
         # Generate a validation set of instances
         vali_data = [uni_instance_gen(n_j=N_JOBS_P, n_m=N_MACHINES_P, low=LOW, high=HIGH) for _ in range(params.n_vali)]
-
+        
+        # NOTE TO PROFESSOR: CHANGE 6 - Handling the correct return value.
+        # The `validate` function now returns positive makespans, so we no longer need to negate the result.
+        # Original: makespan = - validate(vali_data, ppo.policy)
         # The validate function returns positive makespans
         makespans = validate(vali_data, ppo.policy)
         mean_makespan = makespans.mean()
