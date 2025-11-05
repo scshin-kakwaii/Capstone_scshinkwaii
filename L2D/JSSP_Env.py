@@ -1,5 +1,5 @@
-import gymnasium as gym
-from gymnasium import spaces
+import gymnasium as gym #--- CHANGE ---: Original Gym API, Switched to Gymnasium (new API)
+from gymnasium import spaces #--- CHANGE ---: Explicitly import spaces for defining action/observation spaces
 import numpy as np
 from gymnasium.utils import EzPickle
 from uniform_instance_gen import override
@@ -8,7 +8,7 @@ from Params import configs
 from permissibleLS import permissibleLeftShift
 from updateAdjMat import getActionNbghs
 
-# Added: new import for dispatching rule logic
+# --- CHANGE ---: new import for dispatching rule logic
 from dispatching_rules import Rules, apply_dispatching_rule
 
 class SJSSP(gym.Env, EzPickle):
@@ -20,18 +20,13 @@ class SJSSP(gym.Env, EzPickle):
         self.number_of_machines = n_m
         self.number_of_tasks = n_j * n_m
 
-        # --- CRITICAL: Gymnasium API Compliance ---
-        # 1. DEFINE ACTION SPACE
-        # The action is the index of the operation to schedule from the list of available candidates.
-        # Since the number of candidates can change, we let the agent's policy network handle masking.
-        # The action space represents the choice among the currently available (unmasked) jobs.
-        # The agent's output is an index, so we use Discrete.
-        self.action_space = spaces.Discrete(self.number_of_jobs)
+        # Original code: no action or observation space defined
+        # --- CRITICAL CHANGES ---: Gymnasium API Compliance ---
+        self.action_space = spaces.Discrete(self.number_of_jobs) # This is like the original code: The action is the index of the operation to schedule from the list of available candidates 
+        self.action_space = spaces.Discrete(8) # However, we overwrites above, the action space now corresponds to 8 dispatching rules
 
-        # 2. DEFINE OBSERVATION SPACE
+        # --- CHANGE ---: Added observation space as Dict type
         # The observation is a dictionary containing all the state information.
-        self.action_space = spaces.Discrete(8)
-
         self.observation_space = spaces.Dict({
             "adj": spaces.Box(low=0, high=1, shape=(self.number_of_tasks, self.number_of_tasks), dtype=np.single),
             "fea": spaces.Box(low=-1e6, high=1e6, shape=(self.number_of_tasks, configs.input_dim), dtype=np.single),
@@ -47,6 +42,7 @@ class SJSSP(gym.Env, EzPickle):
         self.getEndTimeLB = calEndTimeLB
         self.getNghbs = getActionNbghs
 
+    # --- CHANGE ---: Added helper method to construct observation dictionary
     def _get_obs(self):
         """
         Helper function to create the observation dictionary from the current state.
@@ -68,9 +64,11 @@ class SJSSP(gym.Env, EzPickle):
         return len(self.partial_sol_sequeence) == self.number_of_tasks
 
     @override
-    def step(self, rule_action): # <<< CHANGED BACK
+    # --- CHANGE ---: # Parameter renamed: environment now receives rule_action (0–7) ( Initial: def step(self, action) )
+    def step(self, rule_action): 
         """
-        Accepts a rule_action (0-7) to select the next operation.
+        # --- CRITICAL CHANGE ---: environment now receives a *rule index*, not a direct operation.
+        # Use the chosen rule to select the best operation from the candidates.
         """
         current_candidates = self.omega[~self.mask]
         
@@ -78,8 +76,6 @@ class SJSSP(gym.Env, EzPickle):
             obs = self._get_obs()
             return obs, 0.0, self.done(), False, {}
 
-        # --- CRITICAL CHANGE ---
-        # Use the chosen rule to select the best operation from the candidates.
         action = apply_dispatching_rule(
             Rules(rule_action),
             current_candidates,
@@ -116,7 +112,8 @@ class SJSSP(gym.Env, EzPickle):
                 self.adj[succd, precd] = 0
 
         # Calculate reward and create the next observation
-        obs = self._get_obs()
+        # --- CHANGE ---: Gymnasium format: return (obs, reward, terminated, truncated, info). In original code, return format is: (adj, fea, reward, done, omega, mask)
+        obs = self._get_obs() # def _get.obs already defined above.
         reward = - (self.LBs.max() - self.max_endTime)
         if reward == 0:
             reward = configs.rewardscale
@@ -130,14 +127,14 @@ class SJSSP(gym.Env, EzPickle):
         return obs, reward, terminated, False, {}
 
     @override
-    def reset(self, *, seed=None, options=None):
+    def reset(self, *, seed=None, options=None): # --- CHANGE ---: Gymnasium-compliant reset signature
         """
         Resets the environment to an initial state using instance data from `options`.
         """
         # It's good practice to call the parent's reset method to handle seeding
         super().reset(seed=seed)
 
-        # Unpack the instance data from the 'options' dictionary.
+        # --- CHANGE ---: Load instance data through 'options' dict instead of direct argument
         if options is None or 'data' not in options:
             raise ValueError("Instance data must be provided via the 'options' dictionary, e.g., env.reset(options={'data': ...})")
         data = options['data']
@@ -173,7 +170,8 @@ class SJSSP(gym.Env, EzPickle):
         self.mchsStartTimes = -configs.high * np.ones_like(self.dur.transpose(), dtype=np.int32)
         self.opIDsOnMchs = -self.number_of_jobs * np.ones_like(self.dur.transpose(), dtype=np.int32)
         self.temp1 = np.zeros_like(self.dur, dtype=np.single)
-        
+
+        # --- CHANGE ---: The orginal code return self.adj, fea, self.omega, self.mask
         # Return the initial observation and an empty info dict
-        obs = self._get_obs()
+        obs = self._get_obs() 
         return obs, {}
