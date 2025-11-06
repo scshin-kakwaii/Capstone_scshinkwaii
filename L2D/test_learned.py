@@ -93,7 +93,8 @@ def test(dataset):
                                    candidate=candidate_tensor.unsqueeze(0),
                                    mask=mask_tensor.unsqueeze(0))
                 action = greedy_select_action(pi, candidate)
-
+          # --- CHANGED ---: 'action' is now a PyTorch tensor → converted to Python scalar using .item() before passing to env.step()
+# This prevents potential type mismatch errors when interacting with the environment
             adj, fea, reward, done, candidate, mask = env.step(action.item())
             ep_reward += reward
 
@@ -119,5 +120,6 @@ def test(dataset):
 
 if __name__ == '__main__':
     import cProfile
+
 
     cProfile.run('test(dataset)', filename='restats')
